@@ -1559,7 +1559,13 @@ static void usr1_handler( int signal, siginfo_t *siginfo, void *sigcontext )
     {
         save_context( &context, sigcontext );
         context.ContextFlags |= CONTEXT_EXCEPTION_REPORTING;
+	DWORD64 spc = context.Sp, pcc = context.Pc;
+	if (is_arm64ec_emulator_stack((void*)context.Sp)) {
+            context.Sp = context.X[23];
+            context.Pc = *((DWORD64*)context.X[28]);
+	}
         wait_suspend( &context );
+	context.Sp = spc; context.Pc = pcc;
         restore_context( &context, sigcontext );
     }
 }
