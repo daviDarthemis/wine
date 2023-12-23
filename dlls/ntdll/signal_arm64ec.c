@@ -53,7 +53,6 @@ static inline BOOL is_valid_arm64ec_frame( ULONG_PTR frame )
             frame <= get_arm64ec_cpu_area()->EmulatorStackBase);
 }
 
-
 /**********************************************************************
  *           send_cross_process_notification
  */
@@ -87,6 +86,20 @@ static BOOL send_cross_process_notification( HANDLE process, UINT id, const void
     return TRUE;
 }
 
+static BOOLEAN syscall_callback_begin( void *func )
+{
+    BOOLEAN *InSyscallCallback = &NtCurrentTeb()->ChpeV2CpuAreaInfo->InSyscallCallback;
+    if (func && !*InSyscallCallback) {
+        *InSyscallCallback = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void syscall_callback_end(void)
+{
+    NtCurrentTeb()->ChpeV2CpuAreaInfo->InSyscallCallback = FALSE;
+}
 
 /*******************************************************************
  *         syscalls
@@ -199,8 +212,8 @@ DEFINE_SYSCALL(NtLoadKeyEx, (const OBJECT_ATTRIBUTES *attr, OBJECT_ATTRIBUTES *f
 DEFINE_SYSCALL(NtLockFile, (HANDLE file, HANDLE event, PIO_APC_ROUTINE apc, void* apc_user, IO_STATUS_BLOCK *io_status, LARGE_INTEGER *offset, LARGE_INTEGER *count, ULONG *key, BOOLEAN dont_wait, BOOLEAN exclusive))
 DEFINE_SYSCALL(NtLockVirtualMemory, (HANDLE process, PVOID *addr, SIZE_T *size, ULONG unknown))
 DEFINE_SYSCALL(NtMakeTemporaryObject, (HANDLE handle))
-DEFINE_SYSCALL(NtMapViewOfSection, (HANDLE handle, HANDLE process, PVOID *addr_ptr, ULONG_PTR zero_bits, SIZE_T commit_size, const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr, SECTION_INHERIT inherit, ULONG alloc_type, ULONG protect))
-DEFINE_SYSCALL(NtMapViewOfSectionEx, (HANDLE handle, HANDLE process, PVOID *addr_ptr, const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr, ULONG alloc_type, ULONG protect, MEM_EXTENDED_PARAMETER *parameters, ULONG count))
+DEFINE_WRAPPED_SYSCALL(NtMapViewOfSection, (HANDLE handle, HANDLE process, PVOID *addr_ptr, ULONG_PTR zero_bits, SIZE_T commit_size, const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr, SECTION_INHERIT inherit, ULONG alloc_type, ULONG protect))
+DEFINE_WRAPPED_SYSCALL(NtMapViewOfSectionEx, (HANDLE handle, HANDLE process, PVOID *addr_ptr, const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr, ULONG alloc_type, ULONG protect, MEM_EXTENDED_PARAMETER *parameters, ULONG count))
 DEFINE_SYSCALL(NtNotifyChangeDirectoryFile, (HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc_context, IO_STATUS_BLOCK *iosb, void *buffer, ULONG buffer_size, ULONG filter, BOOLEAN subtree))
 DEFINE_SYSCALL(NtNotifyChangeKey, (HANDLE key, HANDLE event, PIO_APC_ROUTINE apc, void *apc_context, IO_STATUS_BLOCK *io, ULONG filter, BOOLEAN subtree, void *buffer, ULONG length, BOOLEAN async))
 DEFINE_SYSCALL(NtNotifyChangeMultipleKeys, (HANDLE key, ULONG count, OBJECT_ATTRIBUTES *attr, HANDLE event, PIO_APC_ROUTINE apc, void *apc_context, IO_STATUS_BLOCK *io, ULONG filter, BOOLEAN subtree, void *buffer, ULONG length, BOOLEAN async))
@@ -330,8 +343,8 @@ DEFINE_SYSCALL(NtUnloadDriver, (const UNICODE_STRING *name))
 DEFINE_SYSCALL(NtUnloadKey, (OBJECT_ATTRIBUTES *attr))
 DEFINE_SYSCALL(NtUnlockFile, (HANDLE handle, IO_STATUS_BLOCK *io_status, LARGE_INTEGER *offset, LARGE_INTEGER *count, ULONG *key))
 DEFINE_SYSCALL(NtUnlockVirtualMemory, (HANDLE process, PVOID *addr, SIZE_T *size, ULONG unknown))
-DEFINE_SYSCALL(NtUnmapViewOfSection, (HANDLE process, PVOID addr))
-DEFINE_SYSCALL(NtUnmapViewOfSectionEx, (HANDLE process, PVOID addr, ULONG flags))
+DEFINE_WRAPPED_SYSCALL(NtUnmapViewOfSection, (HANDLE process, PVOID addr))
+DEFINE_WRAPPED_SYSCALL(NtUnmapViewOfSectionEx, (HANDLE process, PVOID addr, ULONG flags))
 DEFINE_SYSCALL(NtWaitForAlertByThreadId, (const void *address, const LARGE_INTEGER *timeout))
 DEFINE_SYSCALL(NtWaitForDebugEvent, (HANDLE handle, BOOLEAN alertable, LARGE_INTEGER *timeout, DBGUI_WAIT_STATE_CHANGE *state))
 DEFINE_SYSCALL(NtWaitForKeyedEvent, (HANDLE handle, const void *key, BOOLEAN alertable, const LARGE_INTEGER *timeout))
@@ -357,8 +370,17 @@ NTSTATUS SYSCALL_API NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_
 
     status = syscall_NtAllocateVirtualMemory( process, ret, zero_bits, size_ptr, type, protect );
 
-    if (!is_current) send_cross_process_notification( process, CrossProcessPostVirtualAlloc,
-                                                      *ret, *size_ptr, 3, type, protect, status );
+    if (!is_current)
+    {
+        send_cross_process_notification( process, CrossProcessPostVirtualAlloc,
+                                         *ret, *size_ptr, 3, type, protect, status );
+    }
+    else if (!status &&
+            syscall_callback_begin( arm64ec_callbacks.pNotifyMemoryAlloc ))
+    {
+        arm64ec_callbacks.pNotifyMemoryAlloc( *ret, *size_ptr, type, protect );
+        syscall_callback_end();
+    }
     return status;
 }
 
@@ -375,8 +397,17 @@ NTSTATUS SYSCALL_API NtAllocateVirtualMemoryEx( HANDLE process, PVOID *ret, SIZE
 
     status = syscall_NtAllocateVirtualMemoryEx( process, ret, size_ptr, type, protect, parameters, count );
 
-    if (!is_current) send_cross_process_notification( process, CrossProcessPostVirtualAlloc,
-                                                      *ret, *size_ptr, 3, type, protect, status );
+    if (!is_current)
+    {
+        send_cross_process_notification( process, CrossProcessPostVirtualAlloc,
+                                         *ret, *size_ptr, 3, type, protect, status );
+    }
+    else if (!status &&
+            syscall_callback_begin( arm64ec_callbacks.pNotifyMemoryAlloc ))
+    {
+        arm64ec_callbacks.pNotifyMemoryAlloc( *ret, *size_ptr, type, protect );
+        syscall_callback_end();
+    }
     return status;
 }
 
@@ -395,7 +426,15 @@ NTSTATUS SYSCALL_API NtFlushInstructionCache( HANDLE process, const void *addr, 
     if (!status)
     {
         if (!RtlIsCurrentProcess( process ))
+        {
             send_cross_process_notification( process, CrossProcessFlushCache, addr, size, 0 );
+        }
+        else if (syscall_callback_begin( arm64ec_callbacks.pBTCpu64FlushInstructionCache ))
+        {
+            arm64ec_callbacks.pBTCpu64FlushInstructionCache( addr, size );
+            syscall_callback_end();
+        }
+
     }
     return status;
 }
@@ -405,8 +444,16 @@ NTSTATUS SYSCALL_API NtFreeVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_
     BOOL is_current = RtlIsCurrentProcess( process );
     NTSTATUS status;
 
-    if (!is_current) send_cross_process_notification( process, CrossProcessPreVirtualFree,
-                                                      *addr_ptr, *size_ptr, 2, type, 0 );
+    if (!is_current)
+    {
+        send_cross_process_notification( process, CrossProcessPreVirtualFree,
+                                         *addr_ptr, *size_ptr, 2, type, 0 );
+    }
+    else if (syscall_callback_begin( arm64ec_callbacks.pNotifyMemoryFree ))
+    {
+        arm64ec_callbacks.pNotifyMemoryFree( *addr_ptr, *size_ptr, type );
+        syscall_callback_end();
+    }
 
     status = syscall_NtFreeVirtualMemory( process, addr_ptr, size_ptr, type );
 
@@ -424,14 +471,55 @@ NTSTATUS SYSCALL_API NtGetContextThread( HANDLE handle, CONTEXT *context )
     return status;
 }
 
-NTSTATUS SYSCALL_API NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T *size_ptr,
-                                             ULONG new_prot, ULONG *old_prot )
+NTSTATUS SYSCALL_API NtMapViewOfSection( HANDLE handle, HANDLE process, PVOID *addr_ptr,
+                                         ULONG_PTR zero_bits, SIZE_T commit_size,
+                                         const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr,
+                                         SECTION_INHERIT inherit, ULONG alloc_type, ULONG protect )
+{
+    NTSTATUS status = syscall_NtMapViewOfSection( handle, process, addr_ptr, zero_bits, commit_size,
+                                                  offset_ptr, size_ptr, inherit, alloc_type, protect );
+    if (NT_SUCCESS( status ) && RtlIsCurrentProcess( process ) &&
+        syscall_callback_begin( arm64ec_callbacks.pNotifyMapViewOfSection ))
+    {
+        arm64ec_callbacks.pNotifyMapViewOfSection( *addr_ptr );
+        syscall_callback_end();
+    }
+    return status;
+}
+
+NTSTATUS SYSCALL_API NtMapViewOfSectionEx( HANDLE handle, HANDLE process, PVOID *addr_ptr,
+                                           const LARGE_INTEGER *offset_ptr, SIZE_T *size_ptr,
+                                           ULONG alloc_type, ULONG protect,
+                                           MEM_EXTENDED_PARAMETER *parameters, ULONG count )
+{
+    NTSTATUS status = syscall_NtMapViewOfSectionEx( handle, process, addr_ptr, offset_ptr, size_ptr, alloc_type,
+                                                    protect, parameters, count );
+    if (NT_SUCCESS( status ) && RtlIsCurrentProcess( process ) &&
+        syscall_callback_begin( arm64ec_callbacks.pNotifyMapViewOfSection ))
+    {
+        arm64ec_callbacks.pNotifyMapViewOfSection( *addr_ptr );
+        syscall_callback_end();
+    }
+    return status;
+}
+
+NTSTATUS SYSCALL_API NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr,
+                                             SIZE_T *size_ptr, ULONG new_prot,
+                                             ULONG *old_prot )
 {
     BOOL is_current = RtlIsCurrentProcess( process );
     NTSTATUS status;
 
-    if (!is_current) send_cross_process_notification( process, CrossProcessPreVirtualProtect,
-                                                      *addr_ptr, *size_ptr, 2, new_prot, 0 );
+    if (!is_current)
+    {
+        send_cross_process_notification( process, CrossProcessPreVirtualProtect,
+                                         *addr_ptr, *size_ptr, 2, new_prot, 0 );
+    }
+    else if (syscall_callback_begin( arm64ec_callbacks.pNotifyMemoryProtect ))
+    {
+        arm64ec_callbacks.pNotifyMemoryProtect( *addr_ptr, *size_ptr, new_prot );
+        syscall_callback_end();
+    }
 
     status = syscall_NtProtectVirtualMemory( process, addr_ptr, size_ptr, new_prot, old_prot );
 
@@ -439,6 +527,7 @@ NTSTATUS SYSCALL_API NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr, SI
                                                       *addr_ptr, *size_ptr, 2, new_prot, status );
     return status;
 }
+
 
 NTSTATUS SYSCALL_API NtRaiseException( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance )
 {
@@ -456,6 +545,31 @@ NTSTATUS SYSCALL_API NtSetContextThread( HANDLE handle, const CONTEXT *context )
     return syscall_NtSetContextThread( handle, &arm_ctx );
 }
 
+
+
+NTSTATUS SYSCALL_API NtUnmapViewOfSection( HANDLE process, PVOID addr )
+{
+    if (RtlIsCurrentProcess( process ) &&
+        syscall_callback_begin( arm64ec_callbacks.pNotifyUnmapViewOfSection ))
+    {
+        arm64ec_callbacks.pNotifyUnmapViewOfSection( addr );
+        syscall_callback_end();
+    }
+
+    return syscall_NtUnmapViewOfSection( process, addr );
+}
+
+NTSTATUS SYSCALL_API NtUnmapViewOfSectionEx( HANDLE process, PVOID addr, ULONG flags )
+{
+    if (RtlIsCurrentProcess( process ) &&
+        syscall_callback_begin( arm64ec_callbacks.pNotifyUnmapViewOfSection ))
+    {
+        arm64ec_callbacks.pNotifyUnmapViewOfSection( addr );
+        syscall_callback_end();
+    }
+
+    return syscall_NtUnmapViewOfSectionEx( process, addr, flags );
+}
 
 void * const arm64ec_syscalls[] =
 {
