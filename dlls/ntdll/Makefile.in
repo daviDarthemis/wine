@@ -72,7 +72,8 @@ SOURCES = \
 	unix/virtual.c \
 	version.c \
 	version.rc \
-	wcstring.c
+	wcstring.c \
+	chkstk.obj
 
 EXTRA_OBJS = unix/version.o
 

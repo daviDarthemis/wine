@@ -3167,6 +3167,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
                                     unsigned int arch )
 {
     const int is_cxx = strendswith( source->name, ".cpp" );
+    const int is_obj = strendswith( source->name, ".obj" );
     const char *obj_name;
 
     if (make->disabled[arch] && !(source->file->flags & FLAG_C_IMPLIB)) return;
@@ -3200,6 +3201,11 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
         strarray_add( &make->clean_files, obj_name );
 
     output( "%s: %s\n", obj_dir_path( make, obj_name ), source->filename );
+    if (is_obj)
+    {
+        output("\tcp %s $@\n", source->filename);
+        return;
+    }
     if (is_cxx) output( "\t%s%s -c -o $@ %s", cmd_prefix( "CXX" ), arch_make_variable( "CXX", arch ), source->filename );
     else output( "\t%s%s -c -o $@ %s", cmd_prefix( "CC" ), arch_make_variable( "CC", arch ), source->filename );
     output_filenames( defines );
