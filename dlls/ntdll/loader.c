@@ -1824,6 +1824,8 @@ static void process_detach(void)
 {
     PLIST_ENTRY mark, entry;
     PLDR_DATA_TABLE_ENTRY mod;
+    WINE_MODREF *wm;
+    BOOLEAN notify = TRUE;
 
     mark = &NtCurrentTeb()->Peb->LdrData->InInitializationOrderModuleList;
     do
@@ -1840,9 +1842,18 @@ static void process_detach(void)
 
             /* Call detach notification */
             mod->Flags &= ~LDR_PROCESS_ATTACHED;
-            MODULE_InitDLL( CONTAINING_RECORD(mod, WINE_MODREF, ldr), 
+            wm = CONTAINING_RECORD(mod, WINE_MODREF, ldr);
+
+#ifdef __arm64ec__
+            if ( wm == xtajit64_wm ) {
+                arm64ec_callbacks.pThreadTerm( GetCurrentThread() );
+                notify = FALSE;
+            }
+#endif
+            MODULE_InitDLL( wm,
                             DLL_PROCESS_DETACH, ULongToPtr(process_detaching) );
-            call_ldr_notifications( LDR_DLL_NOTIFICATION_REASON_UNLOADED, mod );
+
+            if (notify) call_ldr_notifications( LDR_DLL_NOTIFICATION_REASON_UNLOADED, mod );
 
             /* Restart at head of WINE_MODREF list, as entries might have
                been added and/or removed while performing the call ... */
@@ -4013,6 +4024,7 @@ void WINAPI LdrShutdownThread(void)
     WINE_MODREF *wm;
     UINT i;
     void **pointers;
+    BOOLEAN called_tls = FALSE;
 
     TRACE("()\n");
 
@@ -4034,12 +4046,21 @@ void WINAPI LdrShutdownThread(void)
         if ( mod->Flags & LDR_NO_DLL_CALLS )
             continue;
 
+#ifdef __arm64ec__
+        if (CONTAINING_RECORD(mod, WINE_MODREF, ldr) == xtajit64_wm) {
+            if (wm->ldr.TlsIndex == -1) {
+                call_tls_callbacks( wm->ldr.DllBase, DLL_THREAD_DETACH );
+                called_tls = TRUE;
+            }
+            arm64ec_callbacks.pThreadTerm( GetCurrentThread() );
+        }
+#endif
+
         MODULE_InitDLL( CONTAINING_RECORD(mod, WINE_MODREF, ldr), 
                         DLL_THREAD_DETACH, NULL );
     }
 
-    if (wm->ldr.TlsIndex == -1) call_tls_callbacks( wm->ldr.DllBase, DLL_THREAD_DETACH );
-
+    if (wm->ldr.TlsIndex == -1 && !called_tls) call_tls_callbacks( wm->ldr.DllBase, DLL_THREAD_DETACH );
     RtlAcquirePebLock();
     if (NtCurrentTeb()->TlsLinks.Flink) RemoveEntryList( &NtCurrentTeb()->TlsLinks );
     if ((pointers = NtCurrentTeb()->ThreadLocalStoragePointer))
