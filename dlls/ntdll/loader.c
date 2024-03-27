@@ -290,7 +290,7 @@ const IMAGE_ARM64EC_METADATA *get_module_arm64ec_metadata( void *module )
         return NULL;
 
     metadata = (const IMAGE_ARM64EC_METADATA *)cfg->CHPEMetadataPointer;
-    if (metadata->Version != 1)
+    if (metadata->Version != 1 && metadata->Version != 2)
     {
         ERR( "unknown version %lu\n", metadata->Version );
         return NULL;
