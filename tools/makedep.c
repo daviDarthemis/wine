@@ -3331,7 +3331,8 @@ static void output_fake_module( struct makefile *make, const char *spec_file )
 
     if (make->disabled[arch]) return;
 
-    if (make->module_x64 && !strcmp( archs.str[arch], "x86_64" )) module = make->module_x64;
+    if (make->module_x64 && (!strcmp( archs.str[arch], "x86_64" ) ||
+                !strcmp( archs.str[arch], "arm64ec" ))) module = make->module_x64;
 
     name = strmake( "%s%s", arch_pe_dirs[arch], module );
     strarray_add( &make->all_targets[arch], name );
@@ -3369,7 +3370,8 @@ static void output_module( struct makefile *make, unsigned int arch )
 
     if (make->disabled[arch]) return;
 
-    if (make->module_x64 && !strcmp( archs.str[arch], "x86_64" )) module = make->module_x64;
+    if (make->module_x64 && (!strcmp( archs.str[arch], "x86_64" ) ||
+                !strcmp( archs.str[arch], "arm64ec" ))) module = make->module_x64;
     if (!make->is_exe)
     {
         if (make->data_only || strarray_exists( &make->extradllflags, "-Wl,--subsystem,native" ))
@@ -3493,7 +3495,8 @@ static void output_unix_lib( struct makefile *make )
     const char *unixlib = make->unixlib;
 
     if (make->disabled[arch]) return;
-    if (make->unixlib_x64 && !strcmp( archs.str[arch], "x86_64" )) unixlib = make->unixlib_x64;
+    if (make->unixlib_x64 && (!strcmp( archs.str[arch], "x86_64" ) ||
+                !strcmp( archs.str[arch], "aarch64" ))) unixlib = make->unixlib_x64;
 
     strarray_add( &make->all_targets[arch], unixlib );
     add_install_rule( make, make->module, arch, unixlib,
