@@ -3421,6 +3421,8 @@ static void output_module( struct makefile *make, unsigned int arch )
         if (make->module_override[link_arch]) module = make->module_override[link_arch];
     }
 
+    strarray_addall( &imports, get_expanded_arch_var_array( make, "EXTRA_LIBS", arch ) );
+
     if (!make->is_exe)
     {
         if (make->data_only || strarray_exists( &make->extradllflags, "-Wl,--subsystem,native" ))
