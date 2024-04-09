@@ -3370,6 +3370,8 @@ static void output_module( struct makefile *make, unsigned int arch )
 
     if (make->disabled[arch]) return;
 
+    strarray_addall( &imports, get_expanded_arch_var_array( make, "EXTRA_LIBS", arch ) );
+
     if (make->module_x64 && (!strcmp( archs.str[arch], "x86_64" ) ||
                 !strcmp( archs.str[arch], "arm64ec" ))) module = make->module_x64;
     if (!make->is_exe)
