@@ -270,7 +270,7 @@ DEFINE_SYSCALL(NtQuerySemaphore, (HANDLE handle, SEMAPHORE_INFORMATION_CLASS cla
 DEFINE_SYSCALL(NtQuerySymbolicLinkObject, (HANDLE handle, UNICODE_STRING *target, ULONG *length))
 DEFINE_SYSCALL(NtQuerySystemEnvironmentValue, (UNICODE_STRING *name, WCHAR *buffer, ULONG length, ULONG *retlen))
 DEFINE_SYSCALL(NtQuerySystemEnvironmentValueEx, (UNICODE_STRING *name, GUID *vendor, void *buffer, ULONG *retlen, ULONG *attrib))
-DEFINE_SYSCALL(NtQuerySystemInformation, (SYSTEM_INFORMATION_CLASS class, void *info, ULONG size, ULONG *ret_size))
+DEFINE_WRAPPED_SYSCALL(NtQuerySystemInformation, (SYSTEM_INFORMATION_CLASS class, void *info, ULONG size, ULONG *ret_size))
 DEFINE_SYSCALL(NtQuerySystemInformationEx, (SYSTEM_INFORMATION_CLASS class, void *query, ULONG query_len, void *info, ULONG size, ULONG *ret_size))
 DEFINE_SYSCALL(NtQuerySystemTime, (LARGE_INTEGER *time))
 DEFINE_SYSCALL(NtQueryTimer, (HANDLE handle, TIMER_INFORMATION_CLASS class, void *info, ULONG len, ULONG *ret_len))
@@ -529,6 +529,21 @@ NTSTATUS SYSCALL_API NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr,
 }
 
 
+
+NTSTATUS SYSCALL_API NtQuerySystemInformation( SYSTEM_INFORMATION_CLASS class,
+                                          void *info, ULONG size, ULONG *ret_size )
+{
+    NTSTATUS status = syscall_NtQuerySystemInformation( class, info, size, ret_size );
+    if (!status && class == SystemCpuInformation &&
+        syscall_callback_begin( arm64ec_callbacks.pUpdateProcessorInformation ))
+    {
+        arm64ec_callbacks.pUpdateProcessorInformation( info );
+        syscall_callback_end();
+    }
+
+    return status;
+}
+
 NTSTATUS SYSCALL_API NtRaiseException( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance )
 {
     ARM64_NT_CONTEXT arm_ctx;
@@ -544,8 +559,6 @@ NTSTATUS SYSCALL_API NtSetContextThread( HANDLE handle, const CONTEXT *context )
     context_x64_to_arm( &arm_ctx, (ARM64EC_NT_CONTEXT *)context );
     return syscall_NtSetContextThread( handle, &arm_ctx );
 }
-
-
 
 NTSTATUS SYSCALL_API NtUnmapViewOfSection( HANDLE process, PVOID addr )
 {
@@ -1341,7 +1354,8 @@ NTSTATUS WINAPI RtlGetNativeSystemInformation( SYSTEM_INFORMATION_CLASS class,
  */
 BOOLEAN WINAPI RtlIsProcessorFeaturePresent( UINT feature )
 {
-    return feature < PROCESSOR_FEATURE_MAX && user_shared_data->ProcessorFeatures[feature];
+    return (feature < PROCESSOR_FEATURE_MAX && user_shared_data->ProcessorFeatures[feature]) ||
+           arm64ec_callbacks.pBTCpu64IsProcessorFeaturePresent( feature );
 }
 
 
