@@ -1135,7 +1135,7 @@ static NTSTATUS steamclient_setup_trampolines_impl( HMODULE src_mod, HMODULE tgt
         steamclient_tgts[steamclient_count] = tgt_addr;
         if (!noexec_cached)
         {
-            if (x64) steamclient_write_jump_x64(src_addr, tgt_addr);
+            if (x64) steamclient_write_jump_x64(src_addr, (ULONGLONG)tgt_addr);
             else steamclient_write_jump_x86(src_addr, PtrToUlong(tgt_addr));
         }
         else steamclient_count++;
@@ -1161,7 +1161,7 @@ static NTSTATUS steamclient_setup_trampolines_impl( HMODULE src_mod, HMODULE tgt
     steamclient_tgts[steamclient_count] = tgt_addr;
     if (!noexec_cached)
     {
-        if (x64) steamclient_write_jump_x64(src_addr, tgt_addr);
+        if (x64) steamclient_write_jump_x64(src_addr, (ULONGLONG)tgt_addr);
         else steamclient_write_jump_x86(src_addr, PtrToUlong(tgt_addr));
     }
     else steamclient_count++;
